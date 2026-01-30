@@ -263,6 +263,12 @@
             transform: translateY(-1px);
         }
 
+        .submit-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .success-message {
             display: none;
             background: var(--success);
@@ -570,22 +576,32 @@
         const progressBar = document.getElementById('progressBar');
         const successMessage = document.getElementById('successMessage');
 
+        // 🔥 REPLACE THIS WITH YOUR GOOGLE APPS SCRIPT URL
+        const SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+
         // Update progress bar based on form completion
         function updateProgress() {
             const inputs = form.querySelectorAll('input[required], select[required]');
             let filled = 0;
+            const checkedFields = new Set();
+            
             inputs.forEach(input => {
                 if (input.type === 'checkbox' || input.type === 'radio') {
                     const name = input.name;
-                    if (form.querySelector(`input[name="${name}"]:checked`)) {
-                        filled++;
+                    if (!checkedFields.has(name)) {
+                        if (form.querySelector(`input[name="${name}"]:checked`)) {
+                            filled++;
+                            checkedFields.add(name);
+                        }
                     }
                 } else if (input.value.trim() !== '') {
                     filled++;
                 }
             });
-            const progress = (filled / inputs.length) * 100;
-            progressBar.style.width = progress + '%';
+            
+            const totalRequired = inputs.length - (inputs.length - [...checkedFields].length - form.querySelectorAll('input[required][type="checkbox"], input[required][type="radio"]').length) + 2;
+            const progress = (filled / totalRequired) * 100;
+            progressBar.style.width = Math.min(progress, 100) + '%';
         }
 
         // Add event listeners to all inputs
@@ -594,104 +610,129 @@
             input.addEventListener('change', updateProgress);
         });
 
+        // Validate phone number
+        function validatePhone(phone) {
+            const phoneRegex = /^\+?[\d\s\-()]{10,}$/;
+            return phoneRegex.test(phone.trim());
+        }
+
+        // Validate email
+        function validateEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email.trim());
+        }
+
         // Form submission
-        form.addEventListener('submit', function(e) {
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             // Validate at least one market is selected
             const marketCheckboxes = form.querySelectorAll('input[name="markets"]:checked');
             if (marketCheckboxes.length === 0) {
-                alert('Please select at least one trading market you are interested in.');
+                alert('⚠️ Please select at least one trading market you are interested in.');
                 return;
             }
 
             // Validate at least one goal is selected
             const goalCheckboxes = form.querySelectorAll('input[name="goals"]:checked');
             if (goalCheckboxes.length === 0) {
-                alert('Please select at least one primary goal.');
+                alert('⚠️ Please select at least one primary goal.');
                 return;
             }
 
-            // Collect form data
+            // Get form data
             const formData = new FormData(form);
-            const data = {};
+            
+            // Collect all data
+            const fullName = formData.get('fullName').trim();
+            const email = formData.get('email').trim();
+            const phone = formData.get('phone').trim();
+            const whatsapp = formData.get('whatsapp').trim();
 
-            // Handle regular inputs
-            for (let [key, value] of formData.entries()) {
-                if (!data[key]) {
-                    data[key] = value;
-                } else {
-                    // Handle multiple values (checkboxes)
-                    if (Array.isArray(data[key])) {
-                        data[key].push(value);
-                    } else {
-                        data[key] = [data[key], value];
-                    }
-                }
+            // Validate email
+            if (!validateEmail(email)) {
+                alert('⚠️ Please enter a valid email address.');
+                document.getElementById('email').focus();
+                return;
+            }
+
+            // Validate phone numbers
+            if (!validatePhone(phone)) {
+                alert('⚠️ Please enter a valid phone number (include country code).');
+                document.getElementById('phone').focus();
+                return;
+            }
+
+            if (!validatePhone(whatsapp)) {
+                alert('⚠️ Please enter a valid WhatsApp number.');
+                document.getElementById('whatsapp').focus();
+                return;
             }
 
             // Collect checkbox values
-            const markets = Array.from(form.querySelectorAll('input[name="markets"]:checked')).map(cb => cb.value);
-            const goals = Array.from(form.querySelectorAll('input[name="goals"]:checked')).map(cb => cb.value);
-            
-            data.markets = markets;
-            data.goals = goals;
+            const markets = Array.from(marketCheckboxes).map(cb => cb.value).join(', ');
+            const goals = Array.from(goalCheckboxes).map(cb => cb.value).join(', ');
 
-            // Log data to console (in production, send to server)
-            console.log('Registration Data:', data);
-
-            // Prepare data for Google Sheets
-            const sheetData = {
-                data: {
-                    'Full Name': data.fullName,
-                    'Email': data.email,
-                    'Phone': data.phone,
-                    'City': data.city,
-                    'Country': data.country,
-                    'Experience': data.experience,
-                    'Markets': Array.isArray(data.markets) ? data.markets.join(', ') : data.markets,
-                    'Traded Before': data.tradedBefore,
-                    'Goals': Array.isArray(data.goals) ? data.goals.join(', ') : data.goals,
-                    'Time Commitment': data.timeCommitment,
-                    'Preferred Timing': data.preferredTiming,
-                    'Commitment': data.commitment,
-                    'How Heard': data.howHeard,
-                    'Referral': data.referral || 'N/A',
-                    'WhatsApp': data.whatsapp,
-                    'Questions': data.questions || 'N/A',
-                    'Timestamp': new Date().toLocaleString()
-                }
+            // Prepare data object
+            const data = {
+                fullName: fullName,
+                email: email,
+                phone: phone,
+                city: formData.get('city').trim(),
+                country: formData.get('country'),
+                experience: formData.get('experience'),
+                markets: markets,
+                tradedBefore: formData.get('tradedBefore'),
+                goals: goals,
+                timeCommitment: formData.get('timeCommitment'),
+                preferredTiming: formData.get('preferredTiming'),
+                commitment: formData.get('commitment'),
+                howHeard: formData.get('howHeard'),
+                referral: formData.get('referral').trim() || 'N/A',
+                whatsapp: whatsapp,
+                questions: formData.get('questions').trim() || 'N/A'
             };
 
             // Show loading state
             const submitBtn = form.querySelector('.submit-btn');
-            submitBtn.textContent = 'Submitting...';
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '⏳ Submitting...';
             submitBtn.disabled = true;
 
-            // Send to Google Sheets via Apps Script
-            fetch('https://sheetdb.io/api/v1/uwmbi39h80nlp', {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(sheetData.data)
-            })
-            .then(() => {
-                // With no-cors mode, we can't read the response, but if no error is thrown, it worked
-                console.log('Form submitted successfully');
+            try {
+                // Send to Google Apps Script
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                // Note: With no-cors, we can't read the response
+                // But if no error is thrown, the request was sent successfully
+                
+                // Wait a moment for the script to process
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
                 // Show success message
                 form.style.display = 'none';
                 successMessage.classList.add('show');
                 progressBar.style.width = '100%';
+                
+                // Scroll to success message
                 successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('There was an error submitting your registration. Please try again or contact us directly.');
-                submitBtn.textContent = 'Complete Registration';
+
+                // Log success
+                console.log('✅ Form submitted successfully');
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                alert('⚠️ There was an error submitting your registration. Please try again or contact us directly via WhatsApp.');
+                submitBtn.textContent = originalText;
                 submitBtn.disabled = false;
-            });
+            }
         });
 
         // Initial progress update
